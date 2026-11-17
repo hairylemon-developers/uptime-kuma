@@ -8,6 +8,7 @@
             <ul class="list-group mb-3" style="border-radius: 1rem">
                 <li v-for="(remoteBrowser, index) in $root.remoteBrowserList" :key="index" class="list-group-item">
                     {{ remoteBrowser.name }}
+                    <span class="badge bg-secondary ms-2">{{ engineLabel(remoteBrowser.engine) }}</span>
                     <br />
                     <a href="#" @click="$refs.remoteBrowserDialog.show(remoteBrowser.id)">{{ $t("Edit") }}</a>
                 </li>
@@ -24,6 +25,9 @@
             <p>
                 {{ $t("remoteBrowsersDescription") }}
                 <a href="https://hub.docker.com/r/browserless/chrome">{{ $t("self-hosted container") }}</a>
+            </p>
+            <p class="form-text">
+                {{ $t("remoteBrowserEngineDescription") }}
             </p>
         </div>
 
@@ -52,6 +56,17 @@ export default {
         },
         settingsLoaded() {
             return this.$parent.$parent.$parent.settingsLoaded;
+        },
+    },
+
+    methods: {
+        /**
+         * Display label for remote browser engine
+         * @param {string} engine Engine key
+         * @returns {string} Label
+         */
+        engineLabel(engine) {
+            return engine === "kitesurf" ? this.$t("browserEngineKitesurf") : this.$t("browserEngineChromium");
         },
     },
 };

@@ -55,7 +55,7 @@ module.exports.remoteBrowserSocketHandler = (socket) => {
     socket.on("testRemoteBrowser", async (remoteBrowser, callback) => {
         try {
             checkLogin(socket);
-            let check = await testRemoteBrowser(remoteBrowser.url);
+            let check = await testRemoteBrowser(remoteBrowser.url, remoteBrowser.engine);
             log.info("remoteBrowser", "Tested remote browser: " + check);
             let msg;
 

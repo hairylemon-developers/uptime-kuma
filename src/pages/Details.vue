@@ -32,6 +32,7 @@
                         monitor.type === 'keyword' ||
                         monitor.type === 'json-query' ||
                         monitor.type === 'real-browser' ||
+                        monitor.type === 'real-browser-kitesurf' ||
                         monitor.type === 'websocket-upgrade'
                     "
                     :href="monitor.url"
@@ -313,7 +314,10 @@
             </div>
 
             <!-- Screenshot -->
-            <div v-if="monitor.type === 'real-browser'" class="shadow-box">
+            <div
+                v-if="monitor.type === 'real-browser' || monitor.type === 'real-browser-kitesurf'"
+                class="shadow-box"
+            >
                 <div class="row">
                     <div class="col-md-6 zoom-cursor">
                         <img

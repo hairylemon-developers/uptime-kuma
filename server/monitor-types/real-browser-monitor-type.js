@@ -1,5 +1,6 @@
 const { MonitorType } = require("./monitor-type");
 const { chromium } = require("playwright-core");
+const puppeteer = require("puppeteer-core");
 const { UP, log } = require("../../src/util");
 const { Settings } = require("../settings");
 const childProcess = require("child_process");
@@ -11,13 +12,15 @@ const { RemoteBrowser } = require("../remote-browser");
 const { commandExists } = require("../util-server");
 
 /**
- * Cached instance of a browser
+ * Cached instance of a browser (local Chromium only)
  * @type {import ("playwright-core").Browser}
  */
 let browser = null;
 
 let allowedList = [];
 let lastAutoDetectChromeExecutable = null;
+
+const DEFAULT_KITESURF_CDP_URL = "ws://127.0.0.1:8787/devtools/browser";
 
 if (process.platform === "win32") {
     allowedList.push(process.env.LOCALAPPDATA + "\\Google\\Chrome\\Application\\chrome.exe");
@@ -57,6 +60,32 @@ if (process.platform === "win32") {
 }
 
 /**
+ * Engine for a monitor type
+ * @param {string} monitorType Monitor type string
+ * @returns {"chromium"|"kitesurf"} Engine name
+ */
+function engineForMonitorType(monitorType) {
+    return monitorType === "real-browser-kitesurf" ? "kitesurf" : "chromium";
+}
+
+/**
+ * Normalize remote browser engine value
+ * @param {?string} engine Engine from DB
+ * @returns {"chromium"|"kitesurf"} Engine name
+ */
+function normalizeRemoteEngine(engine) {
+    return engine === "kitesurf" ? "kitesurf" : "chromium";
+}
+
+/**
+ * CDP WebSocket URL for local Kitesurf
+ * @returns {string} CDP URL
+ */
+function getKitesurfCdpUrl() {
+    return process.env.UPTIME_KUMA_KITESURF_CDP_URL || DEFAULT_KITESURF_CDP_URL;
+}
+
+/**
  * Is the executable path allowed?
  * @param {string} executablePath Path to executable
  * @returns {Promise<boolean>} The executable is allowed?
@@ -93,16 +122,48 @@ async function getBrowser() {
 }
 
 /**
- * Get the current instance of the browser. If there isn't one, create it
- * @param {integer} remoteBrowserID Path to executable
- * @param {integer} userId User ID
- * @returns {Promise<Browser>} The browser
+ * Connect to local Kitesurf over CDP via Puppeteer (official Kitesurf sample pattern)
+ * @returns {Promise<import("puppeteer-core").Browser>} The browser
  */
-async function getRemoteBrowser(remoteBrowserID, userId) {
+async function getKitesurfBrowser() {
+    const cdpUrl = getKitesurfCdpUrl();
+    log.debug("kitesurf", `Connecting over CDP (puppeteer): ${cdpUrl}`);
+    return puppeteer.connect({
+        browserWSEndpoint: cdpUrl,
+    });
+}
+
+/**
+ * Connect to a configured remote browser
+ * @param {integer} remoteBrowserID Remote browser ID
+ * @param {integer} userId User ID
+ * @param {"chromium"|"kitesurf"} expectedEngine Engine required by the monitor type
+ * @returns {Promise<{browser: import("playwright-core").Browser|import("puppeteer-core").Browser, closeAfter: boolean, disconnect?: boolean}>} Connection
+ */
+async function getRemoteBrowser(remoteBrowserID, userId, expectedEngine) {
     let remoteBrowser = await RemoteBrowser.get(remoteBrowserID, userId);
-    log.debug("chromium", `Using remote browser: ${remoteBrowser.name} (${remoteBrowser.id})`);
+    const engine = normalizeRemoteEngine(remoteBrowser.engine);
+    if (engine !== expectedEngine) {
+        throw new Error(
+            `Remote browser "${remoteBrowser.name}" is type ${engine}, but this monitor requires ${expectedEngine}.`
+        );
+    }
+    log.debug(engine, `Using remote browser: ${remoteBrowser.name} (${remoteBrowser.id})`);
+    if (engine === "kitesurf") {
+        return {
+            browser: await puppeteer.connect({
+                browserWSEndpoint: remoteBrowser.url,
+            }),
+            closeAfter: true,
+            disconnect: true,
+        };
+    }
+    // Playwright protocol remotes (browserless-style) reuse the shared handle
     browser = await chromium.connect(remoteBrowser.url);
-    return browser;
+    return {
+        browser,
+        closeAfter: false,
+    };
 }
 
 /**
@@ -233,32 +294,145 @@ async function testChrome(executablePath) {
         throw new Error(e.message);
     }
 }
-// test remote browser
+
+/**
+ * Test local Kitesurf CDP endpoint
+ * @returns {Promise<string>} Browser version string
+ */
+async function testKitesurf() {
+    const cdpUrl = getKitesurfCdpUrl();
+    log.info("kitesurf", "Testing Kitesurf CDP: " + cdpUrl);
+    const ksBrowser = await puppeteer.connect({
+        browserWSEndpoint: cdpUrl,
+    });
+    try {
+        return await ksBrowser.version();
+    } finally {
+        await ksBrowser.disconnect();
+    }
+}
+
 /**
  * @param {string} remoteBrowserURL Remote Browser URL
+ * @param {"chromium"|"kitesurf"} [engine="chromium"] Remote engine type
  * @returns {Promise<boolean>} Returns if connection worked
  */
-async function testRemoteBrowser(remoteBrowserURL) {
+async function testRemoteBrowser(remoteBrowserURL, engine = "chromium") {
     try {
-        const browser = await chromium.connect(remoteBrowserURL);
-        browser.version();
-        await browser.close();
+        if (normalizeRemoteEngine(engine) === "kitesurf") {
+            const ksBrowser = await puppeteer.connect({
+                browserWSEndpoint: remoteBrowserURL,
+            });
+            await ksBrowser.version();
+            await ksBrowser.disconnect();
+            return true;
+        }
+        const remote = await chromium.connect(remoteBrowserURL);
+        remote.version();
+        await remote.close();
         return true;
     } catch (e) {
         throw new Error(e.message);
     }
 }
+
+/**
+ * Run a real-browser check via Puppeteer (Kitesurf / CDP)
+ * Matches official Kitesurf sample: connect → newPage → goto → screenshot → disconnect
+ * @param {object} monitor Monitor
+ * @param {object} heartbeat Heartbeat
+ * @param {object} server Server
+ * @param {import("puppeteer-core").Browser} ksBrowser Puppeteer browser
+ * @returns {Promise<void>}
+ */
+async function checkWithPuppeteer(monitor, heartbeat, server, ksBrowser) {
+    const startedAt = Date.now();
+    try {
+        const page = await ksBrowser.newPage();
+        // Match Playwright's default viewport (1280x720); Puppeteer defaults to 800x600
+        await page.setViewport({ width: 1280, height: 720 });
+
+        // Prevent Local File Inclusion
+        // Accept only http:// and https://
+        // https://github.com/louislam/uptime-kuma/security/advisories/GHSA-2qgm-m29m-cj2h
+        let url = new URL(monitor.url);
+        if (url.protocol !== "http:" && url.protocol !== "https:") {
+            throw new Error("Invalid url protocol, only http and https are allowed.");
+        }
+
+        const timeoutMs = monitor.interval * 1000 * 0.8;
+        const res = await page.goto(monitor.url, {
+            timeout: timeoutMs,
+        });
+
+        if (monitor.screenshot_delay > 0) {
+            await new Promise((resolve) => setTimeout(resolve, monitor.screenshot_delay));
+        }
+
+        const filename = jwt.sign(monitor.id, server.jwtSecret) + ".png";
+        await page.screenshot({
+            path: path.join(Database.screenshotDir, filename),
+        });
+
+        if (!res) {
+            throw new Error("No response from navigation");
+        }
+
+        const status = res.status();
+        if (status >= 200 && status < 400) {
+            heartbeat.status = UP;
+            heartbeat.msg = status;
+            heartbeat.ping = Date.now() - startedAt;
+        } else {
+            throw new Error(status + "");
+        }
+    } finally {
+        try {
+            await ksBrowser.disconnect();
+        } catch (e) {
+            log.debug("kitesurf", `browser.disconnect: ${e.message}`);
+        }
+    }
+}
+
 class RealBrowserMonitorType extends MonitorType {
-    name = "real-browser";
+    /**
+     * @param {string} name Monitor type key
+     */
+    constructor(name = "real-browser") {
+        super();
+        this.name = name;
+    }
 
     /**
      * @inheritdoc
      */
     async check(monitor, heartbeat, server) {
-        const browser = monitor.remote_browser
-            ? await getRemoteBrowser(monitor.remote_browser, monitor.user_id)
-            : await getBrowser();
-        const context = await browser.newContext();
+        const useRemote = Boolean(monitor.remote_browser);
+        const engine = engineForMonitorType(monitor.type || this.name);
+        const useKitesurf = engine === "kitesurf";
+
+        if (useKitesurf) {
+            const ksBrowser = useRemote
+                ? (await getRemoteBrowser(monitor.remote_browser, monitor.user_id, engine)).browser
+                : await getKitesurfBrowser();
+            await checkWithPuppeteer(monitor, heartbeat, server, ksBrowser);
+            return;
+        }
+
+        let browserInstance;
+        let closeBrowserAfter = false;
+
+        if (useRemote) {
+            const remote = await getRemoteBrowser(monitor.remote_browser, monitor.user_id, engine);
+            browserInstance = remote.browser;
+            closeBrowserAfter = remote.closeAfter;
+        } else {
+            browserInstance = await getBrowser();
+        }
+
+        const context = await browserInstance.newContext();
+        const startedAt = Date.now();
         try {
             const page = await context.newPage();
 
@@ -270,9 +444,10 @@ class RealBrowserMonitorType extends MonitorType {
                 throw new Error("Invalid url protocol, only http and https are allowed.");
             }
 
+            const timeoutMs = monitor.interval * 1000 * 0.8;
             const res = await page.goto(monitor.url, {
                 waitUntil: "networkidle",
-                timeout: monitor.interval * 1000 * 0.8,
+                timeout: timeoutMs,
             });
 
             // Wait for additional time before taking screenshot if configured
@@ -286,17 +461,36 @@ class RealBrowserMonitorType extends MonitorType {
                 path: path.join(Database.screenshotDir, filename),
             });
 
+            if (!res) {
+                throw new Error("No response from navigation");
+            }
+
             if (res.status() >= 200 && res.status() < 400) {
                 heartbeat.status = UP;
                 heartbeat.msg = res.status();
 
-                const timing = res.request().timing();
-                heartbeat.ping = timing.responseEnd;
+                try {
+                    const timing = res.request().timing();
+                    if (timing && typeof timing.responseEnd === "number" && timing.responseEnd >= 0) {
+                        heartbeat.ping = timing.responseEnd;
+                    } else {
+                        heartbeat.ping = Date.now() - startedAt;
+                    }
+                } catch (e) {
+                    heartbeat.ping = Date.now() - startedAt;
+                }
             } else {
                 throw new Error(res.status() + "");
             }
         } finally {
             await context.close();
+            if (closeBrowserAfter) {
+                try {
+                    await browserInstance.close();
+                } catch (e) {
+                    log.debug("chromium", `browser.close: ${e.message}`);
+                }
+            }
         }
     }
 }
@@ -304,6 +498,9 @@ class RealBrowserMonitorType extends MonitorType {
 module.exports = {
     RealBrowserMonitorType,
     testChrome,
+    testKitesurf,
     resetChrome,
     testRemoteBrowser,
+    engineForMonitorType,
+    getKitesurfCdpUrl,
 };

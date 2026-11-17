@@ -160,6 +160,7 @@ async function sendInfo(socket, hideVersion = false) {
         info.version = checkVersion.version;
         info.latestVersion = checkVersion.latestVersion;
         info.isContainer = process.env.UPTIME_KUMA_IS_CONTAINER === "1";
+        info.kitesurfEnabled = process.env.UPTIME_KUMA_ENABLE_KITESURF === "1";
         info.dbType = Database.dbConfig.type;
         info.runtime = {
             platform: process.platform, // linux or win32

@@ -211,6 +211,21 @@
                 </div>
             </div>
 
+            <!-- Local Kitesurf Test -->
+            <div v-if="$root.info.kitesurfEnabled" class="mb-4">
+                <label class="form-label">
+                    {{ $t("kitesurfLocal") }}
+                </label>
+                <div class="mb-2">
+                    <button class="btn btn-outline-primary" type="button" @click="testKitesurf">
+                        {{ $t("Test") }}
+                    </button>
+                </div>
+                <div class="form-text">
+                    {{ $t("kitesurfDescription") }}
+                </div>
+            </div>
+
             <!-- Save Button -->
             <div>
                 <button class="btn btn-primary" type="submit">
@@ -274,6 +289,15 @@ export default {
          */
         testChrome() {
             this.$root.getSocket().emit("testChrome", this.settings.chromeExecutable, (res) => {
+                this.$root.toastRes(res);
+            });
+        },
+        /**
+         * Test local Kitesurf CDP endpoint
+         * @returns {void}
+         */
+        testKitesurf() {
+            this.$root.getSocket().emit("testKitesurf", (res) => {
                 this.$root.toastRes(res);
             });
         },

@@ -134,6 +134,9 @@
                                         <option value="real-browser">
                                             HTTP(s) - Browser Engine (Chrome/Chromium) (Beta)
                                         </option>
+                                        <option value="real-browser-kitesurf">
+                                            HTTP(s) - Browser Engine (Kitesurf) (Beta)
+                                        </option>
                                         <option value="websocket-upgrade">Websocket Upgrade</option>
                                         <option value="sftp">SFTP</option>
                                     </optgroup>
@@ -277,7 +280,7 @@
                                     monitor.type === 'http' ||
                                     monitor.type === 'keyword' ||
                                     monitor.type === 'json-query' ||
-                                    monitor.type === 'real-browser'
+                                    isBrowserEngineMonitor
                                 "
                                 class="my-3"
                             >
@@ -392,7 +395,7 @@
                             </div>
 
                             <!-- Remote Browser -->
-                            <div v-if="monitor.type === 'real-browser'" class="my-3">
+                            <div v-if="isBrowserEngineMonitor" class="my-3">
                                 <!-- Toggle -->
                                 <div class="my-3 form-check">
                                     <input
@@ -405,7 +408,11 @@
                                         {{ $t("useRemoteBrowser") }}
                                     </label>
                                     <div class="form-text">
-                                        {{ $t("remoteBrowserToggle") }}
+                                        {{
+                                            monitor.type === "real-browser-kitesurf"
+                                                ? $t("remoteBrowserToggleKitesurf")
+                                                : $t("remoteBrowserToggle")
+                                        }}
                                     </div>
                                 </div>
 
@@ -415,7 +422,9 @@
                                         v-model="monitor.remote_browser"
                                         :options="remoteBrowsersOptions"
                                         icon="plus"
-                                        :action="() => $refs.remoteBrowserDialog.show()"
+                                        :action="
+                                            () => $refs.remoteBrowserDialog.show(null, remoteBrowserEngineFilter)
+                                        "
                                     />
                                 </div>
                             </div>
@@ -1944,7 +1953,7 @@
                             </div>
 
                             <!-- Screenshot Delay - Real Browser only -->
-                            <div v-if="monitor.type === 'real-browser'" class="my-3">
+                            <div v-if="isBrowserEngineMonitor" class="my-3">
                                 <label for="screenshot-delay" class="form-label">
                                     {{
                                         $t("Screenshot Delay", {
@@ -3714,13 +3723,24 @@ export default {
             return this.$t(name);
         },
 
+        isBrowserEngineMonitor() {
+            return this.monitor.type === "real-browser" || this.monitor.type === "real-browser-kitesurf";
+        },
+
+        remoteBrowserEngineFilter() {
+            return this.monitor.type === "real-browser-kitesurf" ? "kitesurf" : "chromium";
+        },
+
         remoteBrowsersOptions() {
-            return this.$root.remoteBrowserList.map((browser) => {
-                return {
-                    label: browser.name,
-                    value: browser.id,
-                };
-            });
+            const engine = this.remoteBrowserEngineFilter;
+            return this.$root.remoteBrowserList
+                .filter((browser) => (browser.engine === "kitesurf" ? "kitesurf" : "chromium") === engine)
+                .map((browser) => {
+                    return {
+                        label: browser.name,
+                        value: browser.id,
+                    };
+                });
         },
 
         remoteBrowsersToggle: {
@@ -3730,9 +3750,9 @@ export default {
             set(value) {
                 if (value) {
                     this.remoteBrowsersEnabled = true;
-                    if (this.monitor.remote_browser == null && this.$root.remoteBrowserList.length > 0) {
+                    if (this.monitor.remote_browser == null && this.remoteBrowsersOptions.length > 0) {
                         // set a default remote browser if there is one. Otherwise, the user will have to select one manually.
-                        this.monitor.remote_browser = this.$root.remoteBrowserList[0].id;
+                        this.monitor.remote_browser = this.remoteBrowsersOptions[0].value;
                     }
                 } else {
                     this.remoteBrowsersEnabled = false;
@@ -4043,9 +4063,19 @@ message HealthCheckResponse {
                 }
             }
 
+            // Switching between Chromium and Kitesurf browser engines: remotes are typed.
+            if (
+                (oldType === "real-browser" || oldType === "real-browser-kitesurf") &&
+                (newType === "real-browser" || newType === "real-browser-kitesurf") &&
+                oldType !== newType
+            ) {
+                this.monitor.remote_browser = null;
+                this.remoteBrowsersEnabled = false;
+            }
+
             // Change to http (override websocket-upgrade defaults)
             // Because user may see wss:// and default to http code 1000, which is strange for http monitor.
-            if (["http", "keyword", "real-browser"].includes(newType)) {
+            if (["http", "keyword", "real-browser", "real-browser-kitesurf"].includes(newType)) {
                 if (!this.monitor.url || this.monitor.url === defaultValueList["websocket-upgrade"].url) {
                     this.monitor.url = defaultValueList.http.url;
                 }
@@ -4551,6 +4581,7 @@ message HealthCheckResponse {
                 "json-query": ["http:", "https:"],
                 "websocket-upgrade": ["ws:", "wss:"],
                 "real-browser": null,
+                "real-browser-kitesurf": null,
                 mqtt: ["mqtt:", "mqtts:", "ws:", "wss:"],
             };
 

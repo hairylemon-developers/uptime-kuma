@@ -400,6 +400,7 @@ exports.TYPES_WITH_DOMAIN_EXPIRY_SUPPORT_VIA_FIELD = {
     keyword: "url",
     "json-query": "url",
     "real-browser": "url",
+    "real-browser-kitesurf": "url",
     "websocket-upgrade": "url",
     port: "hostname",
     ping: "hostname",

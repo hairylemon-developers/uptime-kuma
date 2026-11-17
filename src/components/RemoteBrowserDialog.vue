@@ -22,6 +22,28 @@
                         </div>
 
                         <div class="mb-3">
+                            <label for="remote-browser-engine" class="form-label">{{
+                                $t("remoteBrowserEngine")
+                            }}</label>
+                            <select
+                                id="remote-browser-engine"
+                                v-model="remoteBrowser.engine"
+                                class="form-select"
+                                required
+                            >
+                                <option value="chromium">
+                                    {{ $t("browserEngineChromium") }}
+                                </option>
+                                <option value="kitesurf">
+                                    {{ $t("browserEngineKitesurf") }}
+                                </option>
+                            </select>
+                            <div class="form-text">
+                                {{ $t("remoteBrowserEngineDescription") }}
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
                             <label for="remote-browser-url" class="form-label">{{ $t("URL") }}</label>
                             <input
                                 id="remote-browser-url"
@@ -32,7 +54,8 @@
                             />
 
                             <i18n-t tag="div" keypath="Example:" class="form-text mt-3">
-                                <code>ws://chrome.browserless.io/playwright?token=YOUR-API-TOKEN</code>
+                                <code v-if="remoteBrowser.engine === 'kitesurf'">{{ kitesurfExample }}</code>
+                                <code v-else>{{ chromiumExample }}</code>
                             </i18n-t>
                         </div>
                     </div>
@@ -86,10 +109,12 @@ export default {
             modal: null,
             processing: false,
             id: null,
+            chromiumExample: "ws://chrome.browserless.io/playwright?token=YOUR-API-TOKEN",
+            kitesurfExample: "ws://127.0.0.1:8787/devtools/browser",
             remoteBrowser: {
                 name: "",
                 url: "",
-                // Do not set default value here, please scroll to show()
+                engine: "chromium",
             },
         };
     },
@@ -108,11 +133,12 @@ export default {
         },
 
         /**
-         * Show specified docker host
+         * Show specified remote browser
          * @param {number} remoteBrowserID ID of host to show
+         * @param {"chromium"|"kitesurf"} [defaultEngine="chromium"] Engine for new remotes
          * @returns {void}
          */
-        show(remoteBrowserID) {
+        show(remoteBrowserID, defaultEngine = "chromium") {
             if (remoteBrowserID) {
                 let found = false;
 
@@ -120,7 +146,10 @@ export default {
 
                 for (let n of this.$root.remoteBrowserList) {
                     if (n.id === remoteBrowserID) {
-                        this.remoteBrowser = n;
+                        this.remoteBrowser = {
+                            ...n,
+                            engine: n.engine === "kitesurf" ? "kitesurf" : "chromium",
+                        };
                         found = true;
                         break;
                     }
@@ -134,6 +163,7 @@ export default {
                 this.remoteBrowser = {
                     name: "",
                     url: "",
+                    engine: defaultEngine === "kitesurf" ? "kitesurf" : "chromium",
                 };
             }
 

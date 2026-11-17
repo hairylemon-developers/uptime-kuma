@@ -110,7 +110,10 @@ class UptimeKumaServer {
         }
 
         // Set Monitor Types
-        UptimeKumaServer.monitorTypeList["real-browser"] = new RealBrowserMonitorType();
+        UptimeKumaServer.monitorTypeList["real-browser"] = new RealBrowserMonitorType("real-browser");
+        UptimeKumaServer.monitorTypeList["real-browser-kitesurf"] = new RealBrowserMonitorType(
+            "real-browser-kitesurf"
+        );
         UptimeKumaServer.monitorTypeList["tailscale-ping"] = new TailscalePing();
         UptimeKumaServer.monitorTypeList["websocket-upgrade"] = new WebSocketMonitorType();
         UptimeKumaServer.monitorTypeList["dns"] = new DnsMonitorType();

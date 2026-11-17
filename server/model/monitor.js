@@ -116,7 +116,7 @@ class Monitor extends BeanModel {
     toJSON(preloadData = {}, includeSensitiveData = true) {
         let screenshot = null;
 
-        if (this.type === "real-browser") {
+        if (this.type === "real-browser" || this.type === "real-browser-kitesurf") {
             screenshot = "/screenshots/" + jwt.sign(this.id, UptimeKumaServer.getInstance().jwtSecret) + ".png";
         }
 
@@ -1752,7 +1752,7 @@ class Monitor extends BeanModel {
             }
         }
 
-        if (this.type === "real-browser") {
+        if (this.type === "real-browser" || this.type === "real-browser-kitesurf") {
             // screenshot_delay validation
             if (this.screenshot_delay !== undefined && this.screenshot_delay !== null) {
                 const delay = Number(this.screenshot_delay);

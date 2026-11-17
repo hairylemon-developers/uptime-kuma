@@ -3,7 +3,7 @@ const { Settings } = require("../settings");
 const { sendInfo } = require("../client");
 const { checkLogin } = require("../util-server");
 const { games } = require("gamedig");
-const { testChrome } = require("../monitor-types/real-browser-monitor-type");
+const { testChrome, testKitesurf } = require("../monitor-types/real-browser-monitor-type");
 const { getPM2ProcessList } = require("../util/pm2");
 const fsAsync = require("fs").promises;
 const path = require("path");
@@ -94,6 +94,34 @@ module.exports.generalSocketHandler = (socket, server) => {
                         ok: true,
                         msg: {
                             key: "foundChromiumVersion",
+                            values: [version],
+                        },
+                        msgi18n: true,
+                    });
+                })
+                .catch((e) => {
+                    callback({
+                        ok: false,
+                        msg: e.message,
+                    });
+                });
+        } catch (e) {
+            callback({
+                ok: false,
+                msg: e.message,
+            });
+        }
+    });
+
+    socket.on("testKitesurf", (callback) => {
+        try {
+            checkLogin(socket);
+            testKitesurf()
+                .then((version) => {
+                    callback({
+                        ok: true,
+                        msg: {
+                            key: "foundKitesurfVersion",
                             values: [version],
                         },
                         msgi18n: true,

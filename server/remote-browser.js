@@ -40,6 +40,7 @@ class RemoteBrowser {
         bean.user_id = userID;
         bean.name = remoteBrowser.name;
         bean.url = remoteBrowser.url;
+        bean.engine = remoteBrowser.engine === "kitesurf" ? "kitesurf" : "chromium";
 
         await R.store(bean);
 

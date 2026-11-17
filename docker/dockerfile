@@ -1,4 +1,9 @@
 ARG BASE_IMAGE=louislam/uptime-kuma:base2
+# Official upstream tag/commit for https://github.com/cloudflare/kitesurf (no third-party images)
+ARG KITESURF_REF=2026.11.9
+ARG BAZELISK_VERSION=v1.30.0
+# Set to 0 to skip baking Kitesurf (faster local image builds)
+ARG INCLUDE_KITESURF=1
 
 ############################################
 # Build in Golang
@@ -6,6 +11,47 @@ ARG BASE_IMAGE=louislam/uptime-kuma:base2
 # Check file: builder-go.dockerfile
 ############################################
 FROM louislam/uptime-kuma:builder-go AS build_healthcheck
+
+############################################
+# Official Cloudflare Kitesurf (local CDP engine)
+# Requires ~4GB+ RAM for Bazel; pin KITESURF_REF deliberately.
+############################################
+FROM node:22-bookworm AS kitesurf-builder
+ARG KITESURF_REF
+ARG BAZELISK_VERSION
+ARG INCLUDE_KITESURF
+
+RUN if [ "$INCLUDE_KITESURF" != "1" ]; then \
+      mkdir -p /opt/kitesurf && \
+      echo "INCLUDE_KITESURF=0: skipping Kitesurf build" > /opt/kitesurf/SKIPPED && \
+      exit 0; \
+    fi && \
+    apt-get update && apt-get install -y --no-install-recommends \
+      git ca-certificates curl build-essential python3 unzip zip \
+    && rm -rf /var/lib/apt/lists/* \
+    && npm install -g pnpm@9.15.4 \
+    && ARCH="$(dpkg --print-architecture)" \
+    && case "$ARCH" in \
+         amd64) BAZEL_ARCH=amd64 ;; \
+         arm64) BAZEL_ARCH=arm64 ;; \
+         *) echo "Unsupported arch for bazelisk: $ARCH" >&2; exit 1 ;; \
+       esac \
+    && curl -fsSL "https://github.com/bazelbuild/bazelisk/releases/download/${BAZELISK_VERSION}/bazelisk-linux-${BAZEL_ARCH}" \
+         -o /usr/local/bin/bazel \
+    && chmod +x /usr/local/bin/bazel
+
+WORKDIR /build
+RUN if [ "$INCLUDE_KITESURF" != "1" ]; then exit 0; fi && \
+    case "$KITESURF_REF" in \
+      *[!A-Za-z0-9._/-]*|-*|"") echo "invalid KITESURF_REF: $KITESURF_REF" >&2; exit 1 ;; \
+    esac && \
+    git clone --depth 1 https://github.com/cloudflare/kitesurf.git . && \
+    (git fetch --depth 1 origin "${KITESURF_REF}" && git checkout FETCH_HEAD || git checkout "${KITESURF_REF}") && \
+    git rev-parse HEAD && \
+    pnpm install --frozen-lockfile && \
+    pnpm run build && \
+    mkdir -p /opt/kitesurf && \
+    tar -C /build --exclude='./.git' --exclude='./bazel-*' -cf - . | tar -C /opt/kitesurf -xf -
 
 ############################################
 # Build in Node.js
@@ -27,18 +73,24 @@ RUN mkdir ./data
 # ⭐ Main Image
 ############################################
 FROM $BASE_IMAGE AS release
+ARG INCLUDE_KITESURF
 WORKDIR /app
 
 LABEL org.opencontainers.image.source="https://github.com/louislam/uptime-kuma"
 
 ENV UPTIME_KUMA_IS_CONTAINER=1
+# Co-start official local Kitesurf when baked into the image (slim + full). 0 if INCLUDE_KITESURF=0.
+ENV UPTIME_KUMA_ENABLE_KITESURF=${INCLUDE_KITESURF}
+ENV UPTIME_KUMA_KITESURF_CDP_URL=ws://127.0.0.1:8787/devtools/browser
 
 # Copy app files from build layer
 COPY --chown=node:node --from=build /app /app
+COPY --chown=node:node --from=kitesurf-builder /opt/kitesurf /opt/kitesurf
+COPY --chmod=755 docker/entrypoint-with-kitesurf.sh /entrypoint-with-kitesurf.sh
 
 EXPOSE 3001
 HEALTHCHECK --interval=60s --timeout=30s --start-period=180s --retries=5 CMD extra/healthcheck
-ENTRYPOINT ["/usr/bin/dumb-init", "--"]
+ENTRYPOINT ["/usr/bin/dumb-init", "--", "/entrypoint-with-kitesurf.sh"]
 CMD ["node", "server/server.js"]
 
 ############################################
