@@ -149,6 +149,11 @@ async function installChromiumViaApt(executablePath) {
     if (await commandExists(executablePath)) {
         return;
     }
+    if (process.env.UPTIME_KUMA_DISABLE_CHROMIUM_AUTO_DOWNLOAD === "1") {
+        throw new Error(
+            "Chromium not found. Auto-download is disabled (UPTIME_KUMA_DISABLE_CHROMIUM_AUTO_DOWNLOAD=1)."
+        );
+    }
     await new Promise((resolve, reject) => {
         log.info("chromium", "Installing Chromium...");
         let child = childProcess.exec(
