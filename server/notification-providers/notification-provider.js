@@ -47,6 +47,7 @@ class NotificationProvider {
                 }
                 return monitorJSON["hostname"];
             case "globalping":
+            case "aws-lambda":
                 switch (monitorJSON["subtype"]) {
                     case "ping":
                     case "dns":

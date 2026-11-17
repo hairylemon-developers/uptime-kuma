@@ -606,6 +606,24 @@ function determineStatus(status, previousHeartbeat, maxretries, isUpsideDown, be
 }
 
 /**
+ * Download CloudFormation template for the AWS Lambda probe execution role.
+ * Does not create the role; the user runs the stack in AWS Console.
+ */
+router.get("/api/aws-lambda-probe/execution-role.cfn.yaml", (request, response) => {
+    const { EXECUTION_ROLE_TEMPLATE_PATH } = require("../aws-lambda-probe-manager");
+    response.download(EXECUTION_ROLE_TEMPLATE_PATH, "uptime-kuma-lambda-execution-role.cfn.yaml");
+});
+
+/**
+ * Download CloudFormation template for the IAM user used by Uptime Kuma.
+ * Does not create the user; the user runs the stack in AWS Console.
+ */
+router.get("/api/aws-lambda-probe/iam-user.cfn.yaml", (request, response) => {
+    const { IAM_USER_TEMPLATE_PATH } = require("../aws-lambda-probe-manager");
+    response.download(IAM_USER_TEMPLATE_PATH, "uptime-kuma-lambda-iam-user.cfn.yaml");
+});
+
+/**
  * Check whether a monitor is publc
  * @param {number} monitorID - Monitor id
  * @returns {Promise<boolean>} true if the monitor is public, otherwise false

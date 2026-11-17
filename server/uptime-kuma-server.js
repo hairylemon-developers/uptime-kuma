@@ -128,6 +128,9 @@ class UptimeKumaServer {
         UptimeKumaServer.monitorTypeList["port"] = new TCPMonitorType();
         UptimeKumaServer.monitorTypeList["manual"] = new ManualMonitorType();
         UptimeKumaServer.monitorTypeList["globalping"] = new GlobalpingMonitorType(this.getUserAgent());
+        UptimeKumaServer.monitorTypeList["aws-lambda"] = new AwsLambdaMonitorType({
+            httpUserAgent: this.getUserAgent(),
+        });
         UptimeKumaServer.monitorTypeList["redis"] = new RedisMonitorType();
         UptimeKumaServer.monitorTypeList["pm2"] = new PM2MonitorType();
         UptimeKumaServer.monitorTypeList["system-service"] = new SystemServiceMonitorType();
@@ -584,6 +587,7 @@ const { SteamMonitorType } = require("./monitor-types/steam");
 const { TCPMonitorType } = require("./monitor-types/tcp.js");
 const { ManualMonitorType } = require("./monitor-types/manual");
 const { GlobalpingMonitorType } = require("./monitor-types/globalping");
+const { AwsLambdaMonitorType } = require("./monitor-types/aws-lambda");
 const { RedisMonitorType } = require("./monitor-types/redis");
 const { PM2MonitorType } = require("./monitor-types/pm2");
 const { SystemServiceMonitorType } = require("./monitor-types/system-service");

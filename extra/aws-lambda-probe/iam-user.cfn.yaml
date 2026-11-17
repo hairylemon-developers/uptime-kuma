@@ -1,0 +1,87 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  IAM user and access key for Uptime Kuma to manage and invoke the regional
+  Lambda probe. Does not create the Lambda function or the execution role.
+  After create, set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY from the outputs
+  (or another credential source). Create the execution-role stack separately
+  and set UPTIME_KUMA_AWS_LAMBDA_EXECUTION_ROLE_ARN.
+
+Parameters:
+  UserName:
+    Type: String
+    Default: uptime-kuma-lambda-manager
+    Description: IAM user name for Uptime Kuma AWS API access
+
+  FunctionNamePrefix:
+    Type: String
+    Default: uptime-kuma-probe
+    Description: Lambda function name prefix Uptime Kuma is allowed to manage
+
+  ExecutionRoleNamePrefix:
+    Type: String
+    Default: uptime-kuma-probe-execution
+    Description: IAM role name prefix Uptime Kuma may pass to Lambda (PassRole)
+
+Resources:
+  ManagerUser:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: !Ref UserName
+      Tags:
+        - Key: ManagedBy
+          Value: uptime-kuma
+
+  ManagerUserPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: UptimeKumaLambdaProbeManager
+      Users:
+        - !Ref ManagerUser
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: ManageProbeFunctions
+            Effect: Allow
+            Action:
+              - lambda:CreateFunction
+              - lambda:UpdateFunctionCode
+              - lambda:GetFunction
+              - lambda:GetFunctionConfiguration
+              - lambda:InvokeFunction
+            Resource: !Sub "arn:aws:lambda:*:${AWS::AccountId}:function:${FunctionNamePrefix}*"
+          - Sid: ListAccountRegions
+            Effect: Allow
+            Action:
+              - account:ListRegions
+              - account:GetRegionOptStatus
+            Resource: "*"
+          - Sid: PassProbeExecutionRole
+            Effect: Allow
+            Action:
+              - iam:PassRole
+            Resource: !Sub "arn:aws:iam::${AWS::AccountId}:role/${ExecutionRoleNamePrefix}*"
+            Condition:
+              StringEquals:
+                iam:PassedToService: lambda.amazonaws.com
+
+  ManagerAccessKey:
+    Type: AWS::IAM::AccessKey
+    Properties:
+      UserName: !Ref ManagerUser
+      Status: Active
+
+Outputs:
+  AccessKeyId:
+    Description: Set environment variable AWS_ACCESS_KEY_ID to this value
+    Value: !Ref ManagerAccessKey
+  SecretAccessKey:
+    Description: >-
+      Set environment variable AWS_SECRET_ACCESS_KEY to this value.
+      Copy it now; it is only available from this stack output.
+    Value: !GetAtt ManagerAccessKey.SecretAccessKey
+  UserArn:
+    Description: ARN of the IAM user
+    Value: !GetAtt ManagerUser.Arn
+  UserName:
+    Description: IAM user name
+    Value: !Ref ManagerUser

@@ -149,6 +149,14 @@ async function sendInfo(socket, hideVersion = false) {
         serverTimezoneOffset: server.getTimezoneOffset(),
     };
     if (!hideVersion) {
+        const {
+            hasAwsCredentials,
+            hasAwsLambdaExecutionRoleArn,
+            listEnabledAwsRegions,
+            getCloudFormationCreateStackUrl,
+            EXECUTION_ROLE_TEMPLATE_URL,
+            IAM_USER_TEMPLATE_URL,
+        } = require("./aws-lambda-probe-manager");
         info.version = checkVersion.version;
         info.latestVersion = checkVersion.latestVersion;
         info.isContainer = process.env.UPTIME_KUMA_IS_CONTAINER === "1";
@@ -157,6 +165,12 @@ async function sendInfo(socket, hideVersion = false) {
             platform: process.platform, // linux or win32
             arch: process.arch, // x86 or arm
         };
+        info.awsCredentialsAvailable = await hasAwsCredentials();
+        info.awsLambdaExecutionRoleConfigured = hasAwsLambdaExecutionRoleArn();
+        info.awsLambdaExecutionRoleTemplateUrl = EXECUTION_ROLE_TEMPLATE_URL;
+        info.awsLambdaIamUserTemplateUrl = IAM_USER_TEMPLATE_URL;
+        info.awsLambdaCloudFormationCreateUrl = getCloudFormationCreateStackUrl("us-east-1");
+        info.awsEnabledRegions = await listEnabledAwsRegions();
     }
 
     socket.emit("info", info);

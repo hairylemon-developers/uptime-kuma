@@ -70,6 +70,7 @@
         "create-release": "node ./extra/release/create-release.mjs"
     },
     "dependencies": {
+        "@aws-sdk/client-account": "~3.1161.0",
         "@aws-sdk/client-lambda": "~3.1161.0",
         "@grpc/grpc-js": "~1.8.22",
         "@louislam/ping": "~0.4.4-mod.1",

@@ -27,6 +27,80 @@
                                 </template>
                             </i18n-t>
 
+                            <p v-if="monitor.type === 'aws-lambda'" class="form-text">
+                                {{ $t("AwsLambdaMonitorDescription") }}
+                            </p>
+
+                            <div
+                                v-if="monitor.type === 'aws-lambda' && awsLambdaSetupIncomplete"
+                                class="aws-lambda-setup-alert"
+                                role="alert"
+                            >
+                                <p
+                                    v-if="$root.info.awsCredentialsAvailable === false"
+                                    class="aws-lambda-setup-alert__item"
+                                >
+                                    <i18n-t keypath="AwsLambdaCredentialsWarning" tag="span">
+                                        <template #downloadTemplate>
+                                            <a
+                                                :href="
+                                                    $root.info.awsLambdaIamUserTemplateUrl ||
+                                                    '/api/aws-lambda-probe/iam-user.cfn.yaml'
+                                                "
+                                                download
+                                            >
+                                                {{ $t("AwsLambdaDownloadIamUserCloudFormationTemplate") }}
+                                            </a>
+                                        </template>
+                                        <template #openCloudFormation>
+                                            <a
+                                                :href="awsLambdaCloudFormationUrl"
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                            >
+                                                {{ $t("AwsLambdaOpenCloudFormation") }}
+                                            </a>
+                                        </template>
+                                        <template #accessKey>
+                                            <code>AWS_ACCESS_KEY_ID</code>
+                                        </template>
+                                        <template #secretKey>
+                                            <code>AWS_SECRET_ACCESS_KEY</code>
+                                        </template>
+                                    </i18n-t>
+                                </p>
+                                <p
+                                    v-if="$root.info.awsLambdaExecutionRoleConfigured === false"
+                                    class="aws-lambda-setup-alert__item"
+                                >
+                                    <i18n-t keypath="AwsLambdaExecutionRoleWarning" tag="span">
+                                        <template #downloadTemplate>
+                                            <a
+                                                :href="
+                                                    $root.info.awsLambdaExecutionRoleTemplateUrl ||
+                                                    '/api/aws-lambda-probe/execution-role.cfn.yaml'
+                                                "
+                                                download
+                                            >
+                                                {{ $t("AwsLambdaDownloadCloudFormationTemplate") }}
+                                            </a>
+                                        </template>
+                                        <template #openCloudFormation>
+                                            <a
+                                                :href="awsLambdaCloudFormationUrl"
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                            >
+                                                {{ $t("AwsLambdaOpenCloudFormation") }}
+                                            </a>
+                                        </template>
+                                        <template #envVar>
+                                            <code>UPTIME_KUMA_AWS_LAMBDA_EXECUTION_ROLE_ARN</code>
+                                        </template>
+                                    </i18n-t>
+                                </p>
+                            </div>
+
                             <div class="my-3">
                                 <label for="type" class="form-label">{{ $t("Monitor Type") }}</label>
                                 <select
@@ -79,6 +153,9 @@
 
                                     <!-- Should sort from A to Z in this category -->
                                     <optgroup :label="$t('Specific Monitor Type')">
+                                        <option value="aws-lambda">
+                                            {{ $t("AWS Lambda - Regional probes") }}
+                                        </option>
                                         <option value="globalping">
                                             {{ $t("Globalping - Access global monitoring probes") }}
                                         </option>
@@ -140,7 +217,10 @@
                                 {{ $t("tailscalePingWarning") }}
                             </div>
 
-                            <div v-if="monitor.type === 'globalping'" class="my-3">
+                            <div
+                                v-if="monitor.type === 'globalping' || monitor.type === 'aws-lambda'"
+                                class="my-3"
+                            >
                                 <label for="subtype" class="form-label">{{ $t("Monitor Subtype") }}</label>
                                 <select
                                     id="subtype"
@@ -148,10 +228,15 @@
                                     class="form-select"
                                     data-testid="monitor-subtype-select"
                                 >
-                                    <option value="ping">Ping</option>
+                                    <option value="ping">
+                                        {{ monitor.type === "aws-lambda" ? $t("TCP Ping") : "Ping" }}
+                                    </option>
                                     <option value="http">HTTP(s)</option>
                                     <option value="dns">DNS</option>
                                 </select>
+                                <div v-if="monitor.type === 'aws-lambda' && monitor.subtype === 'ping'" class="form-text">
+                                    {{ $t("AwsLambdaTcpPingHelp") }}
+                                </div>
                             </div>
 
                             <div v-if="monitor.type === 'sip-options'" class="alert alert-warning" role="alert">
@@ -693,6 +778,122 @@
                                 </div>
                             </template>
 
+                            <!-- AWS Lambda regional probe -->
+                            <template v-if="monitor.type === 'aws-lambda'">
+                                <div v-if="monitor.subtype === 'ping' || monitor.subtype === 'dns'" class="my-3">
+                                    <label for="hostname-aws-lambda" class="form-label">{{ $t("Hostname") }}</label>
+                                    <input
+                                        id="hostname-aws-lambda"
+                                        v-model="monitor.hostname"
+                                        type="text"
+                                        class="form-control"
+                                        :pattern="ipOrHostnameRegexPattern"
+                                        required
+                                        data-testid="hostname-input"
+                                    />
+                                </div>
+
+                                <div v-if="monitor.subtype === 'http'" class="my-3">
+                                    <label for="url-aws-lambda" class="form-label">{{ $t("URL") }}</label>
+                                    <input
+                                        id="url-aws-lambda"
+                                        v-model="monitor.url"
+                                        type="url"
+                                        class="form-control"
+                                        pattern="https?://.+"
+                                        required
+                                        data-testid="url-input"
+                                    />
+                                </div>
+
+                                <div class="my-3">
+                                    <label for="aws-region" class="form-label">{{ $t("AWS Region") }}</label>
+                                    <select
+                                        id="aws-region"
+                                        v-model="monitor.location"
+                                        class="form-select"
+                                        required
+                                    >
+                                        <option
+                                            v-for="region in awsRegionOptions"
+                                            :key="region.id"
+                                            :value="region.id"
+                                            :disabled="isAwsRegionDisabled(region.id)"
+                                        >
+                                            {{ awsRegionOptionLabel(region) }}
+                                        </option>
+                                    </select>
+                                    <div class="form-text">
+                                        {{ $t("AwsLambdaRegionHelp") }}
+                                    </div>
+                                    <div
+                                        v-if="
+                                            monitor.location &&
+                                            isAwsRegionDisabled(monitor.location)
+                                        "
+                                        class="form-text text-warning"
+                                    >
+                                        {{ $t("AwsLambdaRegionNotEnabled") }}
+                                    </div>
+                                </div>
+
+                                <div class="my-3">
+                                    <label for="ipFamily-aws-lambda" class="form-label">{{ $t("Ip Family") }}</label>
+                                    <select id="ipFamily-aws-lambda" v-model="monitor.ipFamily" class="form-select">
+                                        <option :value="null">{{ $t("auto-select") }}</option>
+                                        <option value="ipv4">IPv4</option>
+                                        <option value="ipv6">IPv6</option>
+                                    </select>
+                                </div>
+
+                                <div v-if="monitor.subtype === 'http' || monitor.subtype === 'dns'" class="my-3">
+                                    <label for="dns_resolve_server_aws" class="form-label">
+                                        {{ $t("Resolver Server") }}
+                                    </label>
+                                    <input
+                                        id="dns_resolve_server_aws"
+                                        v-model="monitor.dns_resolve_server"
+                                        type="text"
+                                        class="form-control"
+                                    />
+                                </div>
+
+                                <template v-if="monitor.subtype === 'dns'">
+                                    <div class="my-3">
+                                        <label for="dns_resolve_type_aws" class="form-label">
+                                            {{ $t("Resource Record Type") }}
+                                        </label>
+                                        <VueMultiselect
+                                            id="dns_resolve_type_aws"
+                                            v-model="monitor.dns_resolve_type"
+                                            :options="globalpingdnsresolvetypeoptions"
+                                            :multiple="false"
+                                            :close-on-select="true"
+                                            :clear-on-select="false"
+                                            :preserve-search="false"
+                                            :placeholder="$t('Pick a RR-Type...')"
+                                            :preselect-first="false"
+                                            :max-height="500"
+                                            :taggable="false"
+                                            data-testid="resolve-type-select"
+                                        ></VueMultiselect>
+                                    </div>
+
+                                    <div class="my-3">
+                                        <label for="keyword-aws-dns" class="form-label">{{ $t("RecordMatch") }}</label>
+                                        <input
+                                            id="keyword-aws-dns"
+                                            v-model="monitor.keyword"
+                                            type="text"
+                                            class="form-control"
+                                        />
+                                        <div class="form-text">
+                                            {{ $t("RegexMatch") }}
+                                        </div>
+                                    </div>
+                                </template>
+                            </template>
+
                             <!-- Port -->
                             <!-- For TCP Port / Steam / MQTT / Radius Type / SNMP / SIP Options / NTP -->
                             <div
@@ -709,7 +910,8 @@
                                     monitor.type === 'ntp' ||
                                     (monitor.type === 'globalping' &&
                                         monitor.subtype === 'ping' &&
-                                        monitor.protocol === 'TCP')
+                                        monitor.protocol === 'TCP') ||
+                                    (monitor.type === 'aws-lambda' && monitor.subtype === 'ping')
                                 "
                                 class="my-3"
                             >
@@ -1720,7 +1922,8 @@
                                     monitor.type === 'http' ||
                                     monitor.type === 'keyword' ||
                                     monitor.type === 'json-query' ||
-                                    (monitor.type === 'globalping' && monitor.subtype === 'http')
+                                    (monitor.type === 'globalping' && monitor.subtype === 'http') ||
+                                    (monitor.type === 'aws-lambda' && monitor.subtype === 'http')
                                 "
                                 class="my-3 form-check"
                                 :title="monitor.ignoreTls ? $t('ignoredTLSError') : ''"
@@ -1816,7 +2019,8 @@
                                     monitor.type === 'keyword' ||
                                     monitor.type === 'json-query' ||
                                     monitor.type === 'redis' ||
-                                    (monitor.type === 'globalping' && monitor.subtype === 'http')
+                                    (monitor.type === 'globalping' && monitor.subtype === 'http') ||
+                                    (monitor.type === 'aws-lambda' && monitor.subtype === 'http')
                                 "
                                 class="my-3 form-check"
                             >
@@ -1837,7 +2041,8 @@
                                     monitor.type === 'http' ||
                                     monitor.type === 'keyword' ||
                                     monitor.type === 'json-query' ||
-                                    (monitor.type === 'globalping' && monitor.subtype === 'http')
+                                    (monitor.type === 'globalping' && monitor.subtype === 'http') ||
+                                    (monitor.type === 'aws-lambda' && monitor.subtype === 'http')
                                 "
                                 class="my-3 form-check"
                             >
@@ -2171,8 +2376,14 @@
                                 </div>
                             </template>
 
-                            <!-- Globalping Accepted Status Codes -->
-                            <div v-if="monitor.type === 'globalping' && monitor.subtype === 'http'" class="my-3">
+                            <!-- Globalping / AWS Lambda Accepted Status Codes -->
+                            <div
+                                v-if="
+                                    (monitor.type === 'globalping' || monitor.type === 'aws-lambda') &&
+                                    monitor.subtype === 'http'
+                                "
+                                class="my-3"
+                            >
                                 <label for="acceptedStatusCodes" class="form-label">
                                     {{ $t("Accepted Status Codes") }}
                                 </label>
@@ -2864,8 +3075,13 @@
                                 </template>
                             </template>
 
-                            <!-- Globalping HTTP Options -->
-                            <template v-if="monitor.type === 'globalping' && monitor.subtype === 'http'">
+                            <!-- Globalping / AWS Lambda HTTP Options -->
+                            <template
+                                v-if="
+                                    (monitor.type === 'globalping' || monitor.type === 'aws-lambda') &&
+                                    monitor.subtype === 'http'
+                                "
+                            >
                                 <h2 class="mt-5 mb-2">{{ $t("HTTP Options") }}</h2>
 
                                 <!-- Method -->
@@ -3282,6 +3498,7 @@ import {
     TYPES_WITH_DOMAIN_EXPIRY_SUPPORT_VIA_FIELD,
 } from "../util.ts";
 import { timeDurationFormatter } from "../util-frontend";
+import { AWS_REGIONS } from "../aws-regions";
 import isFQDN from "validator/lib/isFQDN";
 import isIP from "validator/lib/isIP";
 import HiddenInput from "../components/HiddenInput.vue";
@@ -3398,6 +3615,7 @@ export default {
             acceptedWebsocketCodeOptions: [],
             dnsresolvetypeOptions: [],
             globalpingdnsresolvetypeoptions: [],
+            awsRegionOptions: AWS_REGIONS,
             kafkaSaslMechanismOptions: [],
             gameList: null,
             connectionStringTemplates: {
@@ -3432,6 +3650,32 @@ export default {
 
         timeoutMax() {
             return this.monitor.type === "ping" ? PING_GLOBAL_TIMEOUT_MAX : undefined;
+        },
+
+        awsLambdaCloudFormationUrl() {
+            const region =
+                this.monitor.location && /^[a-z0-9-]+$/.test(this.monitor.location)
+                    ? this.monitor.location
+                    : "us-east-1";
+            return (
+                `https://${region}.console.aws.amazon.com/cloudformation/home` +
+                `?region=${encodeURIComponent(region)}#/stacks/create/template`
+            );
+        },
+
+        awsLambdaSetupIncomplete() {
+            return (
+                this.$root.info.awsCredentialsAvailable === false ||
+                this.$root.info.awsLambdaExecutionRoleConfigured === false
+            );
+        },
+
+        awsEnabledRegionsSet() {
+            const regions = this.$root.info.awsEnabledRegions;
+            if (!Array.isArray(regions)) {
+                return null;
+            }
+            return new Set(regions);
         },
 
         defaultFriendlyName() {
@@ -3772,8 +4016,12 @@ message HealthCheckResponse {
                 this.loadPM2ProcessList();
             }
 
-            if (newType === "globalping" && !this.monitor.subtype) {
+            if ((newType === "globalping" || newType === "aws-lambda") && !this.monitor.subtype) {
                 this.monitor.subtype = "ping";
+            }
+
+            if (newType === "aws-lambda" && (!this.monitor.location || this.monitor.location === "world")) {
+                this.monitor.location = "us-east-1";
             }
 
             if (newType === "dns" && !this.monitor.dns_resolve_server) {
@@ -3844,6 +4092,8 @@ message HealthCheckResponse {
                 } else if (this.monitor.type === "sftp") {
                     this.monitor.port = "22";
                 } else if (this.monitor.type === "globalping" && this.monitor.subtype === "ping") {
+                    this.monitor.port = "80";
+                } else if (this.monitor.type === "aws-lambda" && this.monitor.subtype === "ping") {
                     this.monitor.port = "80";
                 } else {
                     this.monitor.port = undefined;
@@ -4019,6 +4269,29 @@ message HealthCheckResponse {
         this.kafkaSaslMechanismOptions = kafkaSaslMechanismOptions;
     },
     methods: {
+        /**
+         * Whether an AWS region should be disabled in the selector.
+         * Only disables when the Account API returned an enabled-region list.
+         * @param {string} regionId
+         * @returns {boolean}
+         */
+        isAwsRegionDisabled(regionId) {
+            const enabled = this.awsEnabledRegionsSet;
+            if (!enabled) {
+                return false;
+            }
+            return !enabled.has(regionId);
+        },
+
+        /**
+         * @param {{ id: string, name: string }} region
+         * @returns {string}
+         */
+        awsRegionOptionLabel(region) {
+            const base = `${region.name} (${region.id})`;
+            return this.isAwsRegionDisabled(region.id) ? `${base} — ${this.$t("AwsLambdaRegionDisabledOption")}` : base;
+        },
+
         loadPM2ProcessList() {
             this.pm2ProcessLoading = true;
             this.pm2ProcessError = "";
@@ -4119,7 +4392,10 @@ message HealthCheckResponse {
                             this.monitor.tags = undefined;
                         }
 
-                        if (this.monitor.type === "globalping" && this.monitor.subtype === "http") {
+                        if (
+                            (this.monitor.type === "globalping" || this.monitor.type === "aws-lambda") &&
+                            this.monitor.subtype === "http"
+                        ) {
                             if (this.monitor.keyword) {
                                 this.monitor.responsecheck = "keyword";
                             } else if (this.monitor.expectedValue) {
@@ -4225,6 +4501,11 @@ message HealthCheckResponse {
                     toast.error(this.$t("GlobalpingMultipleLocationsError"));
                     return false;
                 }
+            }
+
+            if (this.monitor.type === "aws-lambda" && this.monitor.location && this.isAwsRegionDisabled(this.monitor.location)) {
+                toast.error(this.$t("AwsLambdaRegionNotEnabled"));
+                return false;
             }
 
             // Validate hostname field input for various monitors
@@ -4588,5 +4869,60 @@ message HealthCheckResponse {
 
 textarea {
     min-height: 200px;
+}
+
+.aws-lambda-setup-alert {
+    margin: 0.75rem 0 1rem;
+    padding: 0.75rem 0.9rem;
+    border-radius: 0.5rem;
+    border: 1px solid rgba($warning, 0.45);
+    border-left: 3px solid $warning;
+    background-color: rgba($warning, 0.08);
+    color: inherit;
+    font-size: 0.9rem;
+    line-height: 1.45;
+
+    .dark & {
+        background-color: rgba($warning, 0.12);
+        border-color: rgba($warning, 0.4);
+        color: $dark-font-color;
+    }
+
+    .aws-lambda-setup-alert__item {
+        margin: 0;
+
+        & + .aws-lambda-setup-alert__item {
+            margin-top: 0.65rem;
+            padding-top: 0.65rem;
+            border-top: 1px solid rgba($warning, 0.25);
+        }
+    }
+
+    a {
+        color: inherit;
+        font-weight: 600;
+        text-decoration: underline;
+        text-underline-offset: 2px;
+
+        &:hover {
+            color: $warning;
+        }
+
+        .dark &:hover {
+            color: lighten($warning, 12%);
+        }
+    }
+
+    code {
+        color: inherit;
+        background-color: rgba(127, 127, 127, 0.18);
+        border-radius: 0.25rem;
+        padding: 0.1em 0.35em;
+        font-size: 0.86em;
+
+        .dark & {
+            background-color: rgba(255, 255, 255, 0.08);
+        }
+    }
 }
 </style>

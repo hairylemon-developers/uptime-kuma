@@ -42,14 +42,16 @@
                 </a>
                 <span v-if="monitor.type === 'port'">TCP Port {{ monitor.hostname }}:{{ monitor.port }}</span>
                 <span v-if="monitor.type === 'ping'">Ping: {{ monitor.hostname }}</span>
-                <span v-if="monitor.type === 'globalping'">
+                <span v-if="monitor.type === 'globalping' || monitor.type === 'aws-lambda'">
                     <a v-if="monitor.subtype === 'http'" :href="monitor.url" target="_blank" rel="noopener noreferrer">
                         {{ filterPassword(monitor.url) }}
                     </a>
                     <span v-if="monitor.hostname">{{ monitor.hostname }}</span>
                     <br />
-                    <span>{{ $t("Location") }}:</span>
-                    <span class="keyword">{{ monitor.location }}</span>
+                    <span>{{ monitor.type === "aws-lambda" ? $t("AWS Region") : $t("Location") }}:</span>
+                    <span class="keyword">
+                        {{ monitor.type === "aws-lambda" ? awsRegionLabel(monitor.location) : monitor.location }}
+                    </span>
                     <br />
                     <span v-if="monitor.subtype === 'dns'">
                         [{{ monitor.dns_resolve_type }}]
@@ -451,6 +453,7 @@ const PingChart = defineAsyncComponent(() => import("../components/PingChart.vue
 import Tag from "../components/Tag.vue";
 import CertificateInfo from "../components/CertificateInfo.vue";
 import { getMonitorRelativeURL } from "../util.ts";
+import { awsRegionLabel } from "../aws-regions";
 import { URL } from "whatwg-url";
 import DOMPurify from "dompurify";
 import { marked } from "marked";
@@ -641,6 +644,7 @@ export default {
 
     methods: {
         getResBaseURL,
+        awsRegionLabel,
         /**
          * Request a test notification be sent for this monitor
          * @returns {void}

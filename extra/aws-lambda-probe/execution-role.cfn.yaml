@@ -1,0 +1,38 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  IAM execution role for the Uptime Kuma regional AWS Lambda probe.
+  Create this stack once, then set UPTIME_KUMA_AWS_LAMBDA_EXECUTION_ROLE_ARN
+  to the RoleArn output. This template does not create the Lambda function.
+
+Parameters:
+  RoleName:
+    Type: String
+    Default: uptime-kuma-probe-execution
+    Description: Name of the IAM role the probe Lambda will assume
+
+Resources:
+  ProbeExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref RoleName
+      Description: Execution role for Uptime Kuma AWS Lambda probes
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Tags:
+        - Key: ManagedBy
+          Value: uptime-kuma
+
+Outputs:
+  RoleArn:
+    Description: Set environment variable UPTIME_KUMA_AWS_LAMBDA_EXECUTION_ROLE_ARN to this value, then restart Uptime Kuma
+    Value: !GetAtt ProbeExecutionRole.Arn
+  RoleName:
+    Description: IAM role name
+    Value: !Ref ProbeExecutionRole
