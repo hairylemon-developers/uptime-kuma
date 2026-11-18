@@ -22,6 +22,7 @@
   - Docker multi-stage build clones/builds official Kitesurf (pin with build-arg `KITESURF_REF`, default `2026.11.9`) into `/opt/kitesurf` (~550MB on disk; includes Cloudflare `workerd`). No third-party images/binaries.
   - Entrypoint starts Kitesurf on loopback when `UPTIME_KUMA_ENABLE_KITESURF=1` (default when `INCLUDE_KITESURF=1`). Do not publish host port `8787`.
   - Use `INCLUDE_KITESURF=0` to skip baking Kitesurf for faster local image builds.
+  - Kitesurf CDP sessions (monitor checks, Settings test, remote-browser test) run through a **sequential in-process queue**, so overlapping probes do not open parallel pages against the local engine ([cloudflare/kitesurf#129](https://github.com/cloudflare/kitesurf/issues/129)).
 - **AWS Lambda regional monitor** (`aws-lambda`): run HTTP, TCP ping, or DNS checks from an Uptime Kuma–managed Lambda probe in a selected AWS Region (similar to Globalping, with Region as the location).
   - Probe function is created/updated automatically in the target Region (Node.js 26.x, arm64); credentials use the default AWS credential chain.
   - Requires `UPTIME_KUMA_AWS_LAMBDA_EXECUTION_ROLE_ARN` for first-time function create. Optional `UPTIME_KUMA_AWS_LAMBDA_FUNCTION_NAME` (default `uptime-kuma-probe`).

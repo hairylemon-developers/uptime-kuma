@@ -85,6 +85,24 @@ function getKitesurfCdpUrl() {
     return process.env.UPTIME_KUMA_KITESURF_CDP_URL || DEFAULT_KITESURF_CDP_URL;
 }
 
+/** Serialize Kitesurf CDP sessions — parallel pages can kill the local engine (cloudflare/kitesurf#129) */
+let kitesurfQueue = Promise.resolve();
+
+/**
+ * Run after prior Kitesurf jobs finish (a failed job does not block the queue)
+ * @template T
+ * @param {() => Promise<T>} fn Job
+ * @returns {Promise<T>} Job result
+ */
+function enqueueKitesurf(fn) {
+    const run = kitesurfQueue.then(fn, fn);
+    kitesurfQueue = run.then(
+        () => {},
+        () => {}
+    );
+    return run;
+}
+
 /**
  * Is the executable path allowed?
  * @param {string} executablePath Path to executable
@@ -300,16 +318,18 @@ async function testChrome(executablePath) {
  * @returns {Promise<string>} Browser version string
  */
 async function testKitesurf() {
-    const cdpUrl = getKitesurfCdpUrl();
-    log.info("kitesurf", "Testing Kitesurf CDP: " + cdpUrl);
-    const ksBrowser = await puppeteer.connect({
-        browserWSEndpoint: cdpUrl,
+    return enqueueKitesurf(async () => {
+        const cdpUrl = getKitesurfCdpUrl();
+        log.info("kitesurf", "Testing Kitesurf CDP: " + cdpUrl);
+        const ksBrowser = await puppeteer.connect({
+            browserWSEndpoint: cdpUrl,
+        });
+        try {
+            return await ksBrowser.version();
+        } finally {
+            await ksBrowser.disconnect();
+        }
     });
-    try {
-        return await ksBrowser.version();
-    } finally {
-        await ksBrowser.disconnect();
-    }
 }
 
 /**
@@ -320,12 +340,14 @@ async function testKitesurf() {
 async function testRemoteBrowser(remoteBrowserURL, engine = "chromium") {
     try {
         if (normalizeRemoteEngine(engine) === "kitesurf") {
-            const ksBrowser = await puppeteer.connect({
-                browserWSEndpoint: remoteBrowserURL,
+            return enqueueKitesurf(async () => {
+                const ksBrowser = await puppeteer.connect({
+                    browserWSEndpoint: remoteBrowserURL,
+                });
+                await ksBrowser.version();
+                await ksBrowser.disconnect();
+                return true;
             });
-            await ksBrowser.version();
-            await ksBrowser.disconnect();
-            return true;
         }
         const remote = await chromium.connect(remoteBrowserURL);
         remote.version();
@@ -413,10 +435,12 @@ class RealBrowserMonitorType extends MonitorType {
         const useKitesurf = engine === "kitesurf";
 
         if (useKitesurf) {
-            const ksBrowser = useRemote
-                ? (await getRemoteBrowser(monitor.remote_browser, monitor.user_id, engine)).browser
-                : await getKitesurfBrowser();
-            await checkWithPuppeteer(monitor, heartbeat, server, ksBrowser);
+            await enqueueKitesurf(async () => {
+                const ksBrowser = useRemote
+                    ? (await getRemoteBrowser(monitor.remote_browser, monitor.user_id, engine)).browser
+                    : await getKitesurfBrowser();
+                await checkWithPuppeteer(monitor, heartbeat, server, ksBrowser);
+            });
             return;
         }
 
